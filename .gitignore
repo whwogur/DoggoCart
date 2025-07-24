@@ -1,10 +1,11 @@
 # Ignore everything under Assets/
 Assets/*
 # Un-ignore Scripts and Plugins folders and their contents
-!Assets/Scripts/
-!Assets/Scripts/**
+!Assets/_Project/Scripts/
+!Assets/_Project/Scripts/**
 !Assets/Plugins/
 !Assets/Plugins/**
+!Assets/MyTools/
 
 # Standard Unity ignores
 /[Ll]ibrary/
