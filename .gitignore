@@ -1,0 +1,47 @@
+# Ignore everything under Assets/
+Assets/*
+# Un-ignore Scripts and Plugins folders and their contents
+!Assets/Scripts/
+!Assets/Scripts/**
+!Assets/Plugins/
+!Assets/Plugins/**
+
+# Standard Unity ignores
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# Unity generated files
+*.csproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity package cache
+/[Aa]ssets/[Pp]ackage[Cc]ache/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+.vs/*
