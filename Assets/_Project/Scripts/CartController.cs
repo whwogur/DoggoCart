@@ -47,7 +47,11 @@ namespace DoggoCart
         [SerializeField] float bankSpeed = 2f;
 
         [Header("Refs")]
-        [SerializeField] InputReader input;
+        [SerializeField] InputReader playerInput;
+        [SerializeField] Circuit circuit;
+        [SerializeField] AIDriverData aiDriverData;
+
+        IDrive input;
         private Rigidbody rigidbody;
 
         private Vector3 cartVelocity;
@@ -63,6 +67,19 @@ namespace DoggoCart
         public bool IsGrounded = true;
         public Vector3 Velocity => cartVelocity;
         public float MaxSpeed => maxSpeed;
+
+        private void Awake()
+        {
+            if (playerInput is IDrive driveInput)
+            {
+                input = driveInput;
+            }
+        }
+
+        public void SetInput(IDrive input)
+        {
+            this.input = input;
+        }
 
         private void Start()
         {

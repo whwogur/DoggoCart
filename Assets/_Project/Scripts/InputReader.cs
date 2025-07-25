@@ -5,9 +5,9 @@ using static PlayerInputActions;
 namespace DoggoCart
 {
     [CreateAssetMenu(fileName = "InputReader", menuName = "Cart/Input Reader")]
-    public class InputReader : ScriptableObject, IPlayerActions
+    public class InputReader : ScriptableObject, IPlayerActions, IDrive
     {
-        public Vector3 Move => inputActions.Player.Move.ReadValue<Vector2>();
+        public Vector2 Move => inputActions.Player.Move.ReadValue<Vector2>();
         public bool IsBraking => inputActions.Player.Brake.ReadValue<float>() > 0;
 
         PlayerInputActions inputActions;
