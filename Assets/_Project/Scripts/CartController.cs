@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Unity.Cinemachine;
 using Unity.Netcode;
@@ -15,6 +16,36 @@ namespace DoggoCart
         public bool steering;
         public WheelFrictionCurve initialForwardFriction;
         public WheelFrictionCurve initialSidewaysFriction;
+    }
+
+    public struct InputPayload : INetworkSerializable
+    {
+        public int tick;
+        public Vector3 inputVector;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref tick);
+            serializer.SerializeValue(ref inputVector);
+        }
+    }
+
+    public struct StatePayload : INetworkSerializable
+    {
+        public int tick;
+        public Vector3 position;
+        public Quaternion rotation;
+        public Vector3 velocity;
+        public Vector3 angularVelocity;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref tick);
+            serializer.SerializeValue(ref position);
+            serializer.SerializeValue(ref rotation);
+            serializer.SerializeValue(ref velocity);
+            serializer.SerializeValue(ref angularVelocity);
+        }
     }
 
     public class CartController : NetworkBehaviour
@@ -61,13 +92,35 @@ namespace DoggoCart
 
         RaycastHit hit;
 
-        const float thresholdSpeed = 10f;
-        const float centerOfMassOffset = -0.5f;
+        const float THRESHOLD_SPEED = 10f;
+        const float CENTER_OF_MASS_TARGET = -0.5f;
         Vector3 initialCenterOfMass;
 
         public bool IsGrounded = true;
         public Vector3 Velocity => cartVelocity;
         public float MaxSpeed => maxSpeed;
+
+        //===========
+        // Netcode
+        //===========
+        NetworkTimer timer;
+        const float SERVER_TICK_RATE = 60f;
+        const int BUFFER_SIZE = 1024;
+
+        // Netcode Client
+        CircularBuffer<StatePayload> clientStateBuffer;
+        CircularBuffer<InputPayload> clientInputBuffer;
+        StatePayload lastServerState;
+        StatePayload lastProcessedState;
+
+        // Netcode Server
+        CircularBuffer<StatePayload> serverStateBuffer;
+        Queue<InputPayload> serverInputQueue;
+
+        [Header("Netcode")]
+        [SerializeField] float reconciliationThreshold = 10f;
+        [SerializeField] GameObject serverCapsule;
+        [SerializeField] GameObject clientCapsule;
 
         private void Awake()
         {
@@ -87,6 +140,12 @@ namespace DoggoCart
                 axleInfo.initialForwardFriction = axleInfo.leftWheel.forwardFriction;
                 axleInfo.initialSidewaysFriction = axleInfo.leftWheel.sidewaysFriction;
             }
+
+            timer = new NetworkTimer(SERVER_TICK_RATE);
+            clientStateBuffer = new CircularBuffer<StatePayload>(BUFFER_SIZE);
+            clientInputBuffer = new CircularBuffer<InputPayload>(BUFFER_SIZE);
+            serverStateBuffer = new CircularBuffer<StatePayload>(BUFFER_SIZE);
+            serverInputQueue = new Queue<InputPayload>();
         }
 
         public void SetInput(IDrive input)
@@ -107,7 +166,170 @@ namespace DoggoCart
             audioListener.enabled = true;
         }
 
+        private void Update()
+        {
+            timer.Update(Time.deltaTime);
+        }
+
         private void FixedUpdate()
+        {
+            if (!IsOwner)
+                return;
+
+            while (timer.ShouldTick())
+            {
+                HandleClientTick();
+                HandleServerTick();
+            }
+        }
+
+        private void HandleServerTick()
+        {
+            var bufferIndex = -1;
+            while (serverInputQueue.Count > 0)
+            {
+                InputPayload inputPayload = serverInputQueue.Dequeue();
+                bufferIndex = inputPayload.tick % BUFFER_SIZE;
+
+                StatePayload statePayload = SimulateMovement(inputPayload);
+                serverCapsule.transform.position = statePayload.position.With(y: 5);
+                serverStateBuffer.Add(statePayload, bufferIndex);
+            }
+
+            if (-1 == bufferIndex)
+                return;
+
+            SendToClientRpc(serverStateBuffer.Get(bufferIndex));
+        }
+
+        StatePayload SimulateMovement(InputPayload inputPayload)
+        {
+            Physics.simulationMode = SimulationMode.Script;
+
+            Move(inputPayload.inputVector);
+            Physics.Simulate(Time.fixedDeltaTime);
+            Physics.simulationMode = SimulationMode.FixedUpdate;
+
+            return new StatePayload()
+            {
+                tick = inputPayload.tick,
+                position = transform.position,
+                rotation = transform.rotation,
+                velocity = rigidBody.linearVelocity,
+                angularVelocity = rigidBody.angularVelocity,
+            };
+        }
+
+        [ClientRpc]
+        void SendToClientRpc(StatePayload statePayload)
+        {
+            if (!IsOwner)
+                return;
+
+            lastServerState = statePayload;
+        }
+
+        private void HandleClientTick()
+        {
+            if (!IsClient)
+                return;
+
+            var currentTick = timer.CurrentTick;
+            var bufferIndex = currentTick % BUFFER_SIZE;
+
+            InputPayload inputPayload = new InputPayload()
+            {
+                tick = currentTick,
+                inputVector = input.Move
+            };
+
+            clientInputBuffer.Add(inputPayload, bufferIndex);
+            SendToServerRpc(inputPayload);
+
+            StatePayload statePayload = ProcessMovement(inputPayload);
+            clientCapsule.transform.position = statePayload.position.With(y: 5);
+            clientStateBuffer.Add(statePayload, bufferIndex);
+
+            // 조정
+            HandleServerReconciliation();
+        }
+
+        private bool ShouldReconcile()
+        {
+            bool isNewServerState = !lastServerState.Equals(default);
+            bool isLastStateUndefinedOrDifferent = lastProcessedState.Equals(default) || !lastProcessedState.Equals(lastServerState);
+
+            return isNewServerState && isLastStateUndefinedOrDifferent;
+        }
+
+        void ReconcileState(StatePayload rewindState)
+        {
+            transform.position = rewindState.position;
+            transform.rotation = rewindState.rotation;
+            rigidBody.linearVelocity = rewindState.velocity;
+            rigidBody.angularVelocity = rewindState.angularVelocity;
+
+            if (!rewindState.Equals(lastServerState))
+                return;
+
+            clientStateBuffer.Add(rewindState, rewindState.tick);
+
+            // rewind state -> current state
+            int tickToReplay = lastServerState.tick;
+            while (tickToReplay < timer.CurrentTick)
+            {
+                int bufferIndex = tickToReplay % BUFFER_SIZE;
+                StatePayload statePayload = ProcessMovement(clientInputBuffer.Get(bufferIndex));
+                clientStateBuffer.Add(statePayload, bufferIndex);
+                ++tickToReplay;
+            }
+        }
+
+        void HandleServerReconciliation()
+        {
+            if (!ShouldReconcile())
+                return;
+
+            float positionError;
+            int bufferIndex;
+            StatePayload rewindState = default;
+
+            bufferIndex = lastServerState.tick % BUFFER_SIZE;
+            if (bufferIndex - 1 < 0)
+                return;
+
+            rewindState = IsHost ? serverStateBuffer.Get(bufferIndex - 1) : lastServerState;
+            positionError = Vector3.Distance(rewindState.position, clientStateBuffer.Get(bufferIndex).position);
+
+            if (positionError > reconciliationThreshold)
+            {
+                ReconcileState(rewindState);
+            }
+
+            lastProcessedState = lastServerState;
+        }
+
+        [ServerRpc]
+        void SendToServerRpc(InputPayload input)
+        {
+            serverInputQueue.Enqueue(input);
+        }
+
+        StatePayload ProcessMovement(InputPayload input)
+        {
+            Move(input.inputVector);
+
+            return new StatePayload()
+            {
+                tick = input.tick,
+                position = transform.position,
+                rotation = transform.rotation,
+                velocity = rigidBody.linearVelocity,
+                angularVelocity = rigidBody.angularVelocity,
+            };
+        }
+
+        private void Move(Vector3 inputVector)
         {
             float verticalInput = AdjustInput(input.Move.y);
             float horizontalInput = AdjustInput(input.Move.x);
@@ -129,7 +351,6 @@ namespace DoggoCart
                 HandleAirborneMovement(verticalInput, horizontalInput);
             }
         }
-
         private void HandleGroundedMovement(float verticalInput, float horizontalInput)
         {
             // 회전
@@ -145,7 +366,8 @@ namespace DoggoCart
             {
                 float targetSpeed = verticalInput * maxSpeed;
                 Vector3 forwardWithOutY = transform.forward.With(y: 0).normalized;
-                rigidBody.linearVelocity = Vector3.Lerp(rigidBody.linearVelocity, forwardWithOutY * targetSpeed, Time.deltaTime);
+                float lerpFraction = timer.MinTimeBetweenTicks / (1f / Time.deltaTime);
+                rigidBody.linearVelocity = Vector3.Lerp(rigidBody.linearVelocity, forwardWithOutY * targetSpeed, lerpFraction);
             }
 
             // 아래로 주는 힘
@@ -157,9 +379,9 @@ namespace DoggoCart
 
             // 무게중심 옮기기
             float speed = rigidBody.linearVelocity.magnitude;
-            Vector3 centerOfMassAdjustment = (speed > thresholdSpeed) 
+            Vector3 centerOfMassAdjustment = (speed > THRESHOLD_SPEED) 
                 ? new Vector3(0f, 0f, Mathf.Abs(verticalInput) > 0.1f 
-                    ? Mathf.Sign(verticalInput) * centerOfMassOffset : 0f)
+                    ? Mathf.Sign(verticalInput) * CENTER_OF_MASS_TARGET : 0f)
                 : Vector3.zero;
         }
 

@@ -10,24 +10,24 @@ namespace DoggoCart
     {
         [SerializeField] Circuit circuit;
         [SerializeField] AIDriverData aiDriverData;
-        [SerializeField] GameObject[] aiKartPrefabs;
+        [SerializeField] GameObject[] aiCartPrefabs;
 
-        [SerializeField] GameObject playerKartPrefab;
+        [SerializeField] GameObject playerCartPrefab;
         [SerializeField] CinemachineCamera playerCamera;
 
         void Start()
         {
-            var playerKart = Instantiate(playerKartPrefab, circuit.SpawnPoints[0].position,
+            var playerCart = Instantiate(playerCartPrefab, circuit.SpawnPoints[0].position,
                                                             circuit.SpawnPoints[0].rotation);
 
             Debug.Log(circuit.SpawnPoints[0].position);
             Debug.Log(circuit.SpawnPoints[0].rotation);
-            playerCamera.Follow = playerKart.transform;
-            playerCamera.LookAt = playerKart.transform;
+            playerCamera.Follow = playerCart.transform;
+            playerCamera.LookAt = playerCart.transform;
 
             for (int i = 1; i < circuit.SpawnPoints.Length; ++i)
             {
-                new AICartBuilder(aiKartPrefabs[Random.Range(0, aiKartPrefabs.Length)])
+                new AICartBuilder(aiCartPrefabs[Random.Range(0, aiCartPrefabs.Length)])
                     .withCircuit(circuit)
                     .withDriverData(aiDriverData)
                     .withSpawnPoint(circuit.SpawnPoints[i])
