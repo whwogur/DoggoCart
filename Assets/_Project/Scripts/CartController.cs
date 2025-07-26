@@ -1,7 +1,6 @@
-using System;
 using System.Linq;
-using Unity.VisualScripting;
-using UnityEditor.Rendering;
+using Unity.Cinemachine;
+using Unity.Netcode;
 using UnityEngine;
 using Util.Extension;
 
@@ -18,7 +17,7 @@ namespace DoggoCart
         public WheelFrictionCurve initialSidewaysFriction;
     }
 
-    public class CartController : MonoBehaviour
+    public class CartController : NetworkBehaviour
     {
         [Header("Axle Info")]
         [SerializeField] AxleInfo[] axleInfos;
@@ -50,9 +49,11 @@ namespace DoggoCart
         [SerializeField] InputReader playerInput;
         [SerializeField] Circuit circuit;
         [SerializeField] AIDriverData aiDriverData;
+        [SerializeField] CinemachineCamera playerCamera;
+        [SerializeField] AudioListener audioListener;
 
         IDrive input;
-        private Rigidbody rigidbody;
+        private Rigidbody rigidBody;
 
         private Vector3 cartVelocity;
         private float brakeVelocity;
@@ -74,19 +75,11 @@ namespace DoggoCart
             {
                 input = driveInput;
             }
-        }
 
-        public void SetInput(IDrive input)
-        {
-            this.input = input;
-        }
-
-        private void Start()
-        {
-            rigidbody = GetComponent<Rigidbody>();
+            rigidBody = GetComponent<Rigidbody>();
             input.Enable();
 
-            rigidbody.centerOfMass = centerOfMass.localPosition;
+            rigidBody.centerOfMass = centerOfMass.localPosition;
             initialCenterOfMass = centerOfMass.localPosition;
 
             foreach (var axleInfo in axleInfos)
@@ -94,6 +87,24 @@ namespace DoggoCart
                 axleInfo.initialForwardFriction = axleInfo.leftWheel.forwardFriction;
                 axleInfo.initialSidewaysFriction = axleInfo.leftWheel.sidewaysFriction;
             }
+        }
+
+        public void SetInput(IDrive input)
+        {
+            this.input = input;
+        }
+
+        public override void OnNetworkSpawn()
+        {
+            if (!IsOwner)
+            {
+                audioListener.enabled = false;
+                playerCamera.Priority = 0;
+                return;
+            }
+
+            playerCamera.Priority = 100;
+            audioListener.enabled = true;
         }
 
         private void FixedUpdate()
@@ -107,7 +118,7 @@ namespace DoggoCart
             UpdateAxles(motor, steering);
             UpdateBanking(horizontalInput);
 
-            cartVelocity = transform.InverseTransformDirection(rigidbody.linearVelocity);
+            cartVelocity = transform.InverseTransformDirection(rigidBody.linearVelocity);
 
             if (IsGrounded)
             {
@@ -126,7 +137,7 @@ namespace DoggoCart
                 Mathf.Abs(cartVelocity.z) > 1)
             {
                 float turnMultiplier = Mathf.Clamp01(turnCurve.Evaluate(cartVelocity.magnitude / maxSpeed));
-                rigidbody.AddTorque(Vector3.up * horizontalInput * Mathf.Sign(cartVelocity.z) * turnStrength * 100f * turnMultiplier);
+                rigidBody.AddTorque(Vector3.up * horizontalInput * Mathf.Sign(cartVelocity.z) * turnStrength * 100f * turnMultiplier);
             }
 
             // 가속
@@ -134,18 +145,18 @@ namespace DoggoCart
             {
                 float targetSpeed = verticalInput * maxSpeed;
                 Vector3 forwardWithOutY = transform.forward.With(y: 0).normalized;
-                rigidbody.linearVelocity = Vector3.Lerp(rigidbody.linearVelocity, forwardWithOutY * targetSpeed, Time.deltaTime);
+                rigidBody.linearVelocity = Vector3.Lerp(rigidBody.linearVelocity, forwardWithOutY * targetSpeed, Time.deltaTime);
             }
 
             // 아래로 주는 힘
-            float speedFactor = Mathf.Clamp01(rigidbody.linearVelocity.magnitude / maxSpeed);
-            float lateralG = Mathf.Abs(Vector3.Dot(rigidbody.linearVelocity, transform.right));
+            float speedFactor = Mathf.Clamp01(rigidBody.linearVelocity.magnitude / maxSpeed);
+            float lateralG = Mathf.Abs(Vector3.Dot(rigidBody.linearVelocity, transform.right));
             float downForceFactor = Mathf.Max(speedFactor, lateralG / lateralGScale);
 
-            rigidbody.AddForce(-transform.up * downForce * rigidbody.mass * downForceFactor);
+            rigidBody.AddForce(-transform.up * downForce * rigidBody.mass * downForceFactor);
 
             // 무게중심 옮기기
-            float speed = rigidbody.linearVelocity.magnitude;
+            float speed = rigidBody.linearVelocity.magnitude;
             Vector3 centerOfMassAdjustment = (speed > thresholdSpeed) 
                 ? new Vector3(0f, 0f, Mathf.Abs(verticalInput) > 0.1f 
                     ? Mathf.Sign(verticalInput) * centerOfMassOffset : 0f)
@@ -162,9 +173,9 @@ namespace DoggoCart
 
         private void HandleAirborneMovement(float verticalInput, float horizontalInput)
         {
-            rigidbody.linearVelocity = Vector3.Lerp(
-                rigidbody.linearVelocity,
-                rigidbody.linearVelocity + Vector3.down * gravity,
+            rigidBody.linearVelocity = Vector3.Lerp(
+                rigidBody.linearVelocity,
+                rigidBody.linearVelocity + Vector3.down * gravity,
                 Time.deltaTime * gravity
             );
         }
@@ -185,8 +196,9 @@ namespace DoggoCart
         {
             if (axleInfo.steering)
             {
-                axleInfo.leftWheel.steerAngle = steering;
-                axleInfo.rightWheel.steerAngle = steering;
+                float steeringMultiplier = input.IsBraking ? driftSteerMultiplier : 1f;
+                axleInfo.leftWheel.steerAngle = steering * steeringMultiplier;
+                axleInfo.rightWheel.steerAngle = steering * steeringMultiplier;
             }
         }
 
@@ -205,10 +217,10 @@ namespace DoggoCart
             {
                 if (input.IsBraking)
                 {
-                    rigidbody.constraints = RigidbodyConstraints.FreezeRotationX;
+                    rigidBody.constraints = RigidbodyConstraints.FreezeRotationX;
 
-                    float newZ = Mathf.SmoothDamp(rigidbody.linearVelocity.z, 0, ref brakeVelocity, 1f);
-                    rigidbody.linearVelocity = rigidbody.linearVelocity.With(z: newZ);
+                    float newZ = Mathf.SmoothDamp(rigidBody.linearVelocity.z, 0, ref brakeVelocity, 1f);
+                    rigidBody.linearVelocity = rigidBody.linearVelocity.With(z: newZ);
 
                     axleInfo.leftWheel.brakeTorque = brakeTorque;
                     axleInfo.rightWheel.brakeTorque = brakeTorque;
@@ -218,7 +230,7 @@ namespace DoggoCart
                 }
                 else
                 {
-                    rigidbody.constraints = RigidbodyConstraints.None;
+                    rigidBody.constraints = RigidbodyConstraints.None;
 
                     axleInfo.leftWheel.brakeTorque = 0;
                     axleInfo.rightWheel.brakeTorque = 0;

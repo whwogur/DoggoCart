@@ -19,6 +19,9 @@ namespace DoggoCart
         {
             var playerKart = Instantiate(playerKartPrefab, circuit.SpawnPoints[0].position,
                                                             circuit.SpawnPoints[0].rotation);
+
+            Debug.Log(circuit.SpawnPoints[0].position);
+            Debug.Log(circuit.SpawnPoints[0].rotation);
             playerCamera.Follow = playerKart.transform;
             playerCamera.LookAt = playerKart.transform;
 
