@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using TMPro;
 using Unity.Cinemachine;
 using Unity.Netcode;
 using UnityEngine;
+using Util;
 using Util.Extension;
 
 namespace DoggoCart
@@ -21,18 +24,25 @@ namespace DoggoCart
     public struct InputPayload : INetworkSerializable
     {
         public int tick;
+        public DateTime timestamp;
+        public ulong networkObjectID;
         public Vector3 inputVector;
+        public Vector3 position;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref tick);
+            serializer.SerializeValue(ref timestamp);
+            serializer.SerializeValue(ref networkObjectID);
             serializer.SerializeValue(ref inputVector);
+            serializer.SerializeValue(ref position);
         }
     }
 
     public struct StatePayload : INetworkSerializable
     {
         public int tick;
+        public ulong networkObjectID;
         public Vector3 position;
         public Quaternion rotation;
         public Vector3 velocity;
@@ -41,6 +51,7 @@ namespace DoggoCart
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref tick);
+            serializer.SerializeValue(ref networkObjectID);
             serializer.SerializeValue(ref position);
             serializer.SerializeValue(ref rotation);
             serializer.SerializeValue(ref velocity);
@@ -84,11 +95,12 @@ namespace DoggoCart
         [SerializeField] AudioListener audioListener;
 
         IDrive input;
-        private Rigidbody rigidBody;
+        Rigidbody rigidBody;
+        ClientNetworkTransform clientNetworkTransform;
 
-        private Vector3 cartVelocity;
-        private float brakeVelocity;
-        private float driftVelocity;
+        Vector3 cartVelocity;
+        float brakeVelocity;
+        float driftVelocity;
 
         RaycastHit hit;
 
@@ -103,9 +115,16 @@ namespace DoggoCart
         //===========
         // Netcode
         //===========
-        NetworkTimer timer;
+        NetworkTimer networkTimer;
         const float SERVER_TICK_RATE = 60f;
         const int BUFFER_SIZE = 1024;
+        const float RECONCILE_COOLDOWN = 1f;
+        const float EXP_LIMIT = 0.5f;
+        const float EXP_MULTIPLIER = 1.2f;
+
+        // Extrapolation
+        StatePayload expState;
+        CountdownTimer expCooldownTimer;
 
         // Netcode Client
         CircularBuffer<StatePayload> clientStateBuffer;
@@ -118,11 +137,19 @@ namespace DoggoCart
         Queue<InputPayload> serverInputQueue;
 
         [Header("Netcode")]
-        [SerializeField] float reconciliationThreshold = 10f;
+        [SerializeField] float reconciliationThreshold = 50f;
         [SerializeField] GameObject serverCapsule;
         [SerializeField] GameObject clientCapsule;
+        
+        CountdownTimer reconcileCooldownTimer;
 
-        private void Awake()
+        [Header("Netcode Debug")]
+        [SerializeField] TextMeshProUGUI NetworkStatusText;
+        [SerializeField] TextMeshProUGUI PlayerStatusText;
+        [SerializeField] TextMeshProUGUI ServerRPCDebugText;
+        [SerializeField] TextMeshProUGUI ClientRPCDebugText;
+
+        void Awake()
         {
             if (playerInput is IDrive driveInput)
             {
@@ -130,6 +157,7 @@ namespace DoggoCart
             }
 
             rigidBody = GetComponent<Rigidbody>();
+            clientNetworkTransform = GetComponent<ClientNetworkTransform>();
             input.Enable();
 
             rigidBody.centerOfMass = centerOfMass.localPosition;
@@ -141,11 +169,19 @@ namespace DoggoCart
                 axleInfo.initialSidewaysFriction = axleInfo.leftWheel.sidewaysFriction;
             }
 
-            timer = new NetworkTimer(SERVER_TICK_RATE);
+            networkTimer = new NetworkTimer(SERVER_TICK_RATE);
             clientStateBuffer = new CircularBuffer<StatePayload>(BUFFER_SIZE);
             clientInputBuffer = new CircularBuffer<InputPayload>(BUFFER_SIZE);
             serverStateBuffer = new CircularBuffer<StatePayload>(BUFFER_SIZE);
             serverInputQueue = new Queue<InputPayload>();
+            reconcileCooldownTimer = new CountdownTimer(RECONCILE_COOLDOWN);
+            expCooldownTimer = new CountdownTimer(EXP_LIMIT);
+
+            reconcileCooldownTimer.OnTimerStart += () => expCooldownTimer.Stop();
+            expCooldownTimer.OnTimerStart += () => reconcileCooldownTimer.Stop();
+
+            expCooldownTimer.OnTimerStart += () => SwitchAuthorityMode(AuthorityMode.Server);
+            expCooldownTimer.OnTimerStop += () => SwitchAuthorityMode(AuthorityMode.Client);
         }
 
         public void SetInput(IDrive input)
@@ -166,32 +202,51 @@ namespace DoggoCart
             audioListener.enabled = true;
         }
 
-        private void Update()
+        void Update()
         {
-            timer.Update(Time.deltaTime);
+            networkTimer.Update(Time.deltaTime);
+            reconcileCooldownTimer.Tick(Time.deltaTime);
+            expCooldownTimer.Tick(Time.deltaTime);
+
+            PlayerStatusText.SetText($"Owner: {IsOwner} NetworkObjectID: {NetworkObjectId} Velocity: {cartVelocity.magnitude:F1}");
+
+            Extrapolate();
         }
 
-        private void FixedUpdate()
+        void FixedUpdate()
         {
-            if (!IsOwner)
-                return;
-
-            while (timer.ShouldTick())
+            while (networkTimer.ShouldTick())
             {
                 HandleClientTick();
                 HandleServerTick();
             }
+            Extrapolate();
         }
 
-        private void HandleServerTick()
+        void SwitchAuthorityMode(AuthorityMode authorityMode)
         {
+            clientNetworkTransform.authorityMode = authorityMode;
+
+            bool shouldSync = authorityMode == AuthorityMode.Server;
+            clientNetworkTransform.SyncPositionX = shouldSync;
+            clientNetworkTransform.SyncPositionY = shouldSync;
+            clientNetworkTransform.SyncPositionZ = shouldSync;
+        }
+
+        void HandleServerTick()
+        {
+            if (!IsServer)
+                return;
+
+            InputPayload inputPayload = default;
             var bufferIndex = -1;
+
             while (serverInputQueue.Count > 0)
             {
-                InputPayload inputPayload = serverInputQueue.Dequeue();
+                inputPayload = serverInputQueue.Dequeue();
                 bufferIndex = inputPayload.tick % BUFFER_SIZE;
 
-                StatePayload statePayload = SimulateMovement(inputPayload);
+                StatePayload statePayload = ProcessMovement(inputPayload);
                 serverCapsule.transform.position = statePayload.position.With(y: 5);
                 serverStateBuffer.Add(statePayload, bufferIndex);
             }
@@ -200,24 +255,12 @@ namespace DoggoCart
                 return;
 
             SendToClientRpc(serverStateBuffer.Get(bufferIndex));
+            HandleExtrapolation(serverStateBuffer.Get(bufferIndex), CalculateLatencyInMilliseconds(inputPayload));
         }
 
-        StatePayload SimulateMovement(InputPayload inputPayload)
+        static float CalculateLatencyInMilliseconds(InputPayload inputPayload)
         {
-            Physics.simulationMode = SimulationMode.Script;
-
-            Move(inputPayload.inputVector);
-            Physics.Simulate(Time.fixedDeltaTime);
-            Physics.simulationMode = SimulationMode.FixedUpdate;
-
-            return new StatePayload()
-            {
-                tick = inputPayload.tick,
-                position = transform.position,
-                rotation = transform.rotation,
-                velocity = rigidBody.linearVelocity,
-                angularVelocity = rigidBody.angularVelocity,
-            };
+            return (DateTime.Now - inputPayload.timestamp).Milliseconds / 1000f;
         }
 
         [ClientRpc]
@@ -229,18 +272,21 @@ namespace DoggoCart
             lastServerState = statePayload;
         }
 
-        private void HandleClientTick()
+        void HandleClientTick()
         {
-            if (!IsClient)
+            if (!IsClient || !IsOwner)
                 return;
 
-            var currentTick = timer.CurrentTick;
+            var currentTick = networkTimer.CurrentTick;
             var bufferIndex = currentTick % BUFFER_SIZE;
 
             InputPayload inputPayload = new InputPayload()
             {
                 tick = currentTick,
-                inputVector = input.Move
+                timestamp = DateTime.Now,
+                networkObjectID = NetworkObjectId,
+                inputVector = input.Move,
+                position = transform.position
             };
 
             clientInputBuffer.Add(inputPayload, bufferIndex);
@@ -254,12 +300,14 @@ namespace DoggoCart
             HandleServerReconciliation();
         }
 
-        private bool ShouldReconcile()
+        bool ShouldReconcile()
         {
             bool isNewServerState = !lastServerState.Equals(default);
             bool isLastStateUndefinedOrDifferent = lastProcessedState.Equals(default) || !lastProcessedState.Equals(lastServerState);
 
-            return isNewServerState && isLastStateUndefinedOrDifferent;
+            return !reconcileCooldownTimer.IsRunning &&
+                                    isNewServerState && 
+                    isLastStateUndefinedOrDifferent && !expCooldownTimer.IsRunning;
         }
 
         void ReconcileState(StatePayload rewindState)
@@ -276,7 +324,7 @@ namespace DoggoCart
 
             // rewind state -> current state
             int tickToReplay = lastServerState.tick;
-            while (tickToReplay < timer.CurrentTick)
+            while (tickToReplay < networkTimer.CurrentTick)
             {
                 int bufferIndex = tickToReplay % BUFFER_SIZE;
                 StatePayload statePayload = ProcessMovement(clientInputBuffer.Get(bufferIndex));
@@ -304,9 +352,47 @@ namespace DoggoCart
             if (positionError > reconciliationThreshold)
             {
                 ReconcileState(rewindState);
+                reconcileCooldownTimer.Start();
             }
 
             lastProcessedState = lastServerState;
+        }
+
+        void Extrapolate()
+        {
+            if (IsServer && expCooldownTimer.IsRunning)
+            {
+                transform.position += expState.position.With(y: 0);
+            }
+        }
+        void HandleExtrapolation(StatePayload statePayload, float latency)
+        {
+            if (ShouldExtrapolate(latency))
+            {
+                float axisLength = latency * statePayload.angularVelocity.magnitude * Mathf.Rad2Deg;
+                Quaternion angularRotation = Quaternion.AngleAxis(axisLength, statePayload.angularVelocity);
+
+                if (default != expState.position)
+                {
+                    statePayload = expState;
+                }
+
+                var positionAdjustment = statePayload.velocity * (1 + latency * EXP_MULTIPLIER);
+                expState.position = angularRotation * positionAdjustment;
+                expState.rotation = angularRotation * statePayload.rotation;
+                expState.velocity = statePayload.velocity;
+                expState.angularVelocity = statePayload.angularVelocity;
+                expCooldownTimer.Start();
+            }
+            else
+            {
+                expCooldownTimer.Stop();
+            }
+        }
+
+        bool ShouldExtrapolate(float latency)
+        {
+            return latency < EXP_LIMIT && latency > Time.fixedDeltaTime/* 유니티 넷코드에서 처리해주는 범위*/;
         }
 
         [ServerRpc]
@@ -322,6 +408,7 @@ namespace DoggoCart
             return new StatePayload()
             {
                 tick = input.tick,
+                networkObjectID = input.networkObjectID,
                 position = transform.position,
                 rotation = transform.rotation,
                 velocity = rigidBody.linearVelocity,
@@ -329,7 +416,7 @@ namespace DoggoCart
             };
         }
 
-        private void Move(Vector3 inputVector)
+        void Move(Vector3 inputVector)
         {
             float verticalInput = AdjustInput(input.Move.y);
             float horizontalInput = AdjustInput(input.Move.x);
@@ -351,7 +438,7 @@ namespace DoggoCart
                 HandleAirborneMovement(verticalInput, horizontalInput);
             }
         }
-        private void HandleGroundedMovement(float verticalInput, float horizontalInput)
+        void HandleGroundedMovement(float verticalInput, float horizontalInput)
         {
             // 회전
             if (Mathf.Abs(verticalInput) > 0.1f ||
@@ -366,8 +453,7 @@ namespace DoggoCart
             {
                 float targetSpeed = verticalInput * maxSpeed;
                 Vector3 forwardWithOutY = transform.forward.With(y: 0).normalized;
-                float lerpFraction = timer.MinTimeBetweenTicks / (1f / Time.deltaTime);
-                rigidBody.linearVelocity = Vector3.Lerp(rigidBody.linearVelocity, forwardWithOutY * targetSpeed, lerpFraction);
+                rigidBody.linearVelocity = Vector3.Lerp(rigidBody.linearVelocity, forwardWithOutY * targetSpeed, networkTimer.MinTimeBetweenTicks);
             }
 
             // 아래로 주는 힘
@@ -385,7 +471,7 @@ namespace DoggoCart
                 : Vector3.zero;
         }
 
-        private void UpdateBanking(float horizontalInput)
+        void UpdateBanking(float horizontalInput)
         {
             float targetBankAngle = horizontalInput * -maxBankAngle;
             Vector3 currentEuler = transform.localEulerAngles;
@@ -393,7 +479,7 @@ namespace DoggoCart
             transform.localEulerAngles = currentEuler;
         }
 
-        private void HandleAirborneMovement(float verticalInput, float horizontalInput)
+        void HandleAirborneMovement(float verticalInput, float horizontalInput)
         {
             rigidBody.linearVelocity = Vector3.Lerp(
                 rigidBody.linearVelocity,
@@ -402,7 +488,7 @@ namespace DoggoCart
             );
         }
 
-        private void UpdateAxles(float motor, float steering)
+        void UpdateAxles(float motor, float steering)
         {
             foreach (var axleInfo in axleInfos)
             {
@@ -433,7 +519,7 @@ namespace DoggoCart
             }
         }
 
-        private void HandleBrakesAndDrift(AxleInfo axleInfo)
+        void HandleBrakesAndDrift(AxleInfo axleInfo)
         {
             if (axleInfo.motor)
             {
@@ -463,7 +549,7 @@ namespace DoggoCart
             }
         }
 
-        private void ResetDriftFriction(WheelCollider wheel)
+        void ResetDriftFriction(WheelCollider wheel)
         {
             AxleInfo axleInfo = axleInfos.FirstOrDefault(axle => axle.leftWheel == wheel || axle.rightWheel == wheel);
             if (null != axleInfo)
@@ -473,7 +559,7 @@ namespace DoggoCart
             }
         }
 
-        private void ApplyDriftFriction(WheelCollider wheel)
+        void ApplyDriftFriction(WheelCollider wheel)
         {
             if (wheel.GetGroundHit(out var Hit))
             {
@@ -483,7 +569,7 @@ namespace DoggoCart
             }
         }
 
-        private WheelFrictionCurve UpdateFriction(WheelFrictionCurve friction)
+        WheelFrictionCurve UpdateFriction(WheelFrictionCurve friction)
         {
             friction.stiffness = input.IsBraking 
                 ? Mathf.SmoothDamp(friction.stiffness, .5f, ref driftVelocity, Time.deltaTime * 2f) : 1f;
@@ -491,7 +577,7 @@ namespace DoggoCart
             return friction;
         }
 
-        private void UpdateWheelVisuals(WheelCollider collider)
+        void UpdateWheelVisuals(WheelCollider collider)
         {
             if (0 != collider.transform.childCount)
             {

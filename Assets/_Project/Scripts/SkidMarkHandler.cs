@@ -1,15 +1,16 @@
-﻿using UnityEngine;
-using Unity.Netcode;
+﻿using System.Collections;
 using System.Collections.Generic;
+using Unity.Netcode;
+using UnityEngine;
 
 namespace DoggoCart
 {
-    public class SkidMarkHandler : NetworkBehaviour
+    public class SkidMarkHandler : MonoBehaviour
     {
-        [SerializeField] float slipThreshold = 0.4f;
+        [SerializeField] float slipThreshold = 0.7f;
         [SerializeField] GameObject skidMarkPrefab; // TrailRenderer 포함한 프리팹
-        [SerializeField] float minSkidInterval = 0.1f; // 최소 생성 간격(초)
-        [SerializeField] float minSkidDistance = 0.5f; // 최소 생성 거리(m)
+        [SerializeField] float minSkidInterval = 1f; // 최소 생성 간격(초)
+        [SerializeField] float minSkidDistance = 0.1f; // 최소 생성 거리(m)
         [SerializeField] int poolSize = 20; // 오브젝트 풀 크기
 
         private CartController cart;
@@ -19,10 +20,9 @@ namespace DoggoCart
         private Vector3[] lastSkidPositions = new Vector3[4];
         private Queue<GameObject> skidMarkPool;
 
-        void Start()
+        private const float SKIDMARK_DELAY = 1.0f;
+        private void Start()
         {
-            if (!IsClient) return; // 클라이언트에서만 스키드마크 생성
-
             cart = GetComponent<CartController>();
             wheelColliders = GetComponentsInChildren<WheelCollider>();
             if (4 != wheelColliders.Length)
@@ -34,7 +34,39 @@ namespace DoggoCart
             InitializeSkidMarkPool();
         }
 
-        void InitializeSkidMarkPool()
+        private void OnDestroy()
+        {
+            // 활성화된 스키드마크를 풀에 반환
+            for (int i = 0; i < skidMarks.Length; ++i)
+            {
+                if (skidMarks[i] != null)
+                {
+                    ReturnToPool(skidMarks[i].gameObject); // ReturnToPool 호출
+                    skidMarks[i] = null;
+                }
+            }
+
+            // 풀 정리
+            while (skidMarkPool.Count > 0)
+            {
+                Destroy(skidMarkPool.Dequeue());
+            }
+        }
+
+        private void OnDisable()
+        {
+            // 컴포넌트 비활성화 시 활성화된 스키드마크 반환
+            for (int i = 0; i < skidMarks.Length; ++i)
+            {
+                if (skidMarks[i] != null)
+                {
+                    ReturnToPool(skidMarks[i].gameObject); // ReturnToPool 호출
+                    skidMarks[i] = null;
+                }
+            }
+        }
+
+        private void InitializeSkidMarkPool()
         {
             skidMarkPool = new Queue<GameObject>();
             for (int i = 0; i < poolSize; ++i)
@@ -45,9 +77,9 @@ namespace DoggoCart
             }
         }
 
-        void FixedUpdate()
+        private void FixedUpdate()
         {
-            if (!IsClient || !cart.IsGrounded) return; // 클라이언트 및 접지 상태 확인
+            if (!cart.IsGrounded) return;
 
             for (int i = 0; i < wheelColliders.Length; ++i)
             {
@@ -55,7 +87,7 @@ namespace DoggoCart
             }
         }
 
-        void UpdateSkidMarks(int i)
+        private void UpdateSkidMarks(int i)
         {
             if (!wheelColliders[i].GetGroundHit(out var hit))
             {
@@ -85,11 +117,11 @@ namespace DoggoCart
             lastSkidPositions[i] = currentPos;
         }
 
-        void StartSkid(int i)
+        private void StartSkid(int i)
         {
             if (null != skidMarks[i]) return;
 
-            if (skidMarkPool.Count == 0)
+            if (0 == skidMarkPool.Count)
             {
                 Debug.LogWarning("SkidMark pool is empty!");
                 return;
@@ -105,53 +137,27 @@ namespace DoggoCart
             skidMarkObject.GetComponent<TrailRenderer>().Clear(); // Trail 초기화
         }
 
-        void EndSkid(int i)
+        private void EndSkid(int i)
         {
             if (null == skidMarks[i]) return;
 
             GameObject skidMarkObject = skidMarks[i].gameObject;
             skidMarks[i] = null;
-            ReturnToPool(skidMarkObject); // ReturnToPool 호출
+            StartCoroutine(DelayedReturnToPool(skidMarkObject));
         }
 
-        void ReturnToPool(GameObject skidMark)
+        private void ReturnToPool(GameObject skidMark)
         {
             skidMark.transform.SetParent(null);
             skidMark.SetActive(false);
             skidMarkPool.Enqueue(skidMark);
-            //Debug.Log($"SkidMark returned to pool. Pool size: {skidMarkPool.Count}");
         }
 
-        public override void OnNetworkDespawn()
+        private IEnumerator DelayedReturnToPool(GameObject skidMark)
         {
-            // 활성화된 스키드마크를 풀에 반환
-            for (int i = 0; i < skidMarks.Length; ++i)
-            {
-                if (skidMarks[i] != null)
-                {
-                    ReturnToPool(skidMarks[i].gameObject); // ReturnToPool 호출
-                    skidMarks[i] = null;
-                }
-            }
+            yield return new WaitForSeconds(SKIDMARK_DELAY);
 
-            // 풀 정리
-            while (skidMarkPool.Count > 0)
-            {
-                Destroy(skidMarkPool.Dequeue());
-            }
-        }
-
-        void OnDisable()
-        {
-            // 컴포넌트 비활성화 시 활성화된 스키드마크 반환
-            for (int i = 0; i < skidMarks.Length; ++i)
-            {
-                if (skidMarks[i] != null)
-                {
-                    ReturnToPool(skidMarks[i].gameObject); // ReturnToPool 호출
-                    skidMarks[i] = null;
-                }
-            }
+            ReturnToPool(skidMark);
         }
     }
 }
