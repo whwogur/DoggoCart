@@ -123,7 +123,7 @@ namespace DoggoCart
 
             if (0 == skidMarkPool.Count)
             {
-                Debug.LogWarning("SkidMark pool is empty!");
+                //Debug.LogWarning("SkidMark pool is empty!");
                 return;
             }
 

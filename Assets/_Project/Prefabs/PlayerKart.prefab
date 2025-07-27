@@ -188,10 +188,10 @@ MonoBehaviour:
   reconciliationThreshold: 10
   serverCapsule: {fileID: 9179793609327382498}
   clientCapsule: {fileID: 8997633852728302050}
-  networkText: {fileID: 521240702234264615}
-  playerText: {fileID: 8075200708707131380}
-  serverRpcText: {fileID: 5727453258435308931}
-  clientRpcText: {fileID: 8301022535184275960}
+  NetworkStatusText: {fileID: 521240702234264615}
+  PlayerStatusText: {fileID: 8075200708707131380}
+  ServerRPCDebugText: {fileID: 5727453258435308931}
+  ClientRPCDebugText: {fileID: 8301022535184275960}
 --- !u!114 &-1440998719263987017
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -301,7 +301,7 @@ RectTransform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 590657322831295646}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 20}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -380,7 +380,7 @@ MonoBehaviour:
     m_Top: 0
     m_Bottom: 0
   m_ChildAlignment: 1
-  m_Spacing: 0
+  m_Spacing: 0.5
   m_ChildForceExpandWidth: 0
   m_ChildForceExpandHeight: 0
   m_ChildControlWidth: 0
@@ -448,7 +448,7 @@ GameObject:
   - component: {fileID: 6022083692360811953}
   - component: {fileID: 521240702234264615}
   m_Layer: 0
-  m_Name: NetworkStatus
+  m_Name: NetworkStatusText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -471,7 +471,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 20, y: 2.5}
+  m_SizeDelta: {x: 50, y: 2.5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &6022083692360811953
 CanvasRenderer:
@@ -584,7 +584,7 @@ GameObject:
   - component: {fileID: 1673490537343521472}
   - component: {fileID: 5727453258435308931}
   m_Layer: 0
-  m_Name: ServerRPCDebug
+  m_Name: ServerRPCDebugText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -607,7 +607,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 20, y: 2.5}
+  m_SizeDelta: {x: 50, y: 2.5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &1673490537343521472
 CanvasRenderer:
@@ -1306,7 +1306,7 @@ GameObject:
   - component: {fileID: 4332925621862739711}
   - component: {fileID: 8075200708707131380}
   m_Layer: 0
-  m_Name: PlayerStatus
+  m_Name: PlayerStatusText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1329,7 +1329,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 20, y: 2.5}
+  m_SizeDelta: {x: 50, y: 2.5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &4332925621862739711
 CanvasRenderer:
@@ -1442,7 +1442,7 @@ GameObject:
   - component: {fileID: 6773812341599322201}
   - component: {fileID: 8301022535184275960}
   m_Layer: 0
-  m_Name: ClientRPCDebug
+  m_Name: ClientRPCDebugText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1465,7 +1465,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 20, y: 2.5}
+  m_SizeDelta: {x: 50, y: 2.5}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &6773812341599322201
 CanvasRenderer:

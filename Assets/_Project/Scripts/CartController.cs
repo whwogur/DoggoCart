@@ -320,7 +320,7 @@ namespace DoggoCart
             if (!rewindState.Equals(lastServerState))
                 return;
 
-            clientStateBuffer.Add(rewindState, rewindState.tick);
+            clientStateBuffer.Add(rewindState, rewindState.tick % BUFFER_SIZE);
 
             // rewind state -> current state
             int tickToReplay = lastServerState.tick;
@@ -340,14 +340,15 @@ namespace DoggoCart
 
             float positionError;
             int bufferIndex;
-            StatePayload rewindState = default;
 
             bufferIndex = lastServerState.tick % BUFFER_SIZE;
+
             if (bufferIndex - 1 < 0)
                 return;
 
-            rewindState = IsHost ? serverStateBuffer.Get(bufferIndex - 1) : lastServerState;
-            positionError = Vector3.Distance(rewindState.position, clientStateBuffer.Get(bufferIndex).position);
+            StatePayload rewindState = IsHost ? serverStateBuffer.Get(bufferIndex - 1) : lastServerState; // 호스트 RPC는 바로 실행되기 때문에, 지난 서버 state를 쓰면 댐
+            StatePayload clientState = IsHost ? clientStateBuffer.Get(bufferIndex - 1) : clientStateBuffer.Get(bufferIndex);
+            positionError = Vector3.Distance(rewindState.position, clientState.position);
 
             if (positionError > reconciliationThreshold)
             {
