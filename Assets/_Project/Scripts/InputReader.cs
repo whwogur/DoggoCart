@@ -9,6 +9,7 @@ namespace DoggoCart
     {
         public Vector2 Move => inputActions.Player.Move.ReadValue<Vector2>();
         public bool IsBraking => inputActions.Player.Brake.ReadValue<float>() > 0;
+        public bool IsFiring => inputActions.Player.Fire.ReadValue<float>() > 0;
 
         PlayerInputActions inputActions;
 

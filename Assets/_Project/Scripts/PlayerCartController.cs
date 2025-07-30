@@ -14,8 +14,8 @@ namespace DoggoCart
         [SerializeField] TextMeshProUGUI PlayerStatusText;
         [SerializeField] TextMeshProUGUI ServerRPCDebugText;
         [SerializeField] TextMeshProUGUI ClientRPCDebugText;
-
         
+
 
         public override void OnNetworkSpawn()
         {

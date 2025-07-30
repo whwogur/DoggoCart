@@ -189,6 +189,8 @@ namespace DoggoCart
             reconcileCooldownTimer.Tick(Time.deltaTime);
             expCooldownTimer.Tick(Time.deltaTime);
 
+            //if (playerInput.IsFiring)
+            //    transform.position += transform.forward * 20f;
             Extrapolate();
         }
 

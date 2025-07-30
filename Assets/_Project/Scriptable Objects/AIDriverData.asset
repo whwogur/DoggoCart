@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff467c2653108624f876746ec90f71e3, type: 3}
   m_Name: AIDriverData
   m_EditorClassIdentifier: 
-  proximityThreshold: 20
+  proximityThreshold: 30
   updateCornerRange: 50
   brakeRange: 80
   spinThreshold: 100

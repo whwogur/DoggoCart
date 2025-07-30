@@ -12,6 +12,8 @@ namespace DoggoCart
         [SerializeField] float minSkidInterval = 1f; // 최소 생성 간격(초)
         [SerializeField] float minSkidDistance = 0.1f; // 최소 생성 거리(m)
         [SerializeField] int poolSize = 20; // 스키드마크 풀 크기
+        [SerializeField] AudioClip tireSquealSound;
+        [SerializeField] AudioSource tireSquealSource;
 
         private CartController cart;
         private WheelCollider[] wheelColliders;
@@ -29,6 +31,8 @@ namespace DoggoCart
             poolParent = new GameObject("SkidMarkPool").transform;
             poolParent.gameObject.SetActive(false); // 비활성화하여 씬에 영향을 주지 않음
             DontDestroyOnLoad(poolParent.gameObject); // 씬 전환 시 유지
+            tireSquealSource.clip = tireSquealSound;
+            tireSquealSource.loop = true;
         }
 
         private void Start()
@@ -173,6 +177,7 @@ namespace DoggoCart
                 return;
             }
 
+            tireSquealSource.Play();
             skidMarkObject.SetActive(true);
             Transform skidMarkTransform = skidMarkObject.transform;
             skidMarks[i] = skidMarkTransform;
@@ -195,6 +200,8 @@ namespace DoggoCart
         {
             if (null == skidMarks[i])
                 return;
+
+            tireSquealSource.Stop();
 
             GameObject skidMarkObject = skidMarks[i].gameObject;
             skidMarks[i] = null;

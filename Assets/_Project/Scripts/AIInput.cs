@@ -93,6 +93,7 @@ namespace DoggoCart
                 _ => Move.With(x: 0f)
             };
 
+            // Counter-steer logic
             if (Mathf.Abs(angularVelocity) > driverData.spinThreshold)
             {
                 Move = Move.With(x: -Mathf.Sign(angularVelocity));
