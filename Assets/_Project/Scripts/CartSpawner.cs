@@ -3,6 +3,7 @@ using Unity.Cinemachine;
 using UnityEngine;
 using Util.Extension;
 using Util;
+using Unity.Netcode;
 
 namespace DoggoCart
 {
@@ -10,56 +11,50 @@ namespace DoggoCart
     {
         [SerializeField] Circuit circuit;
         [SerializeField] AIDriverData aiDriverData;
-        [SerializeField] GameObject[] aiCartPrefabs;
-
-        [SerializeField] GameObject playerCartPrefab;
-        [SerializeField] CinemachineCamera playerCamera;
+        [SerializeField] GameObject[] aiKartPrefabs;
 
         void Start()
         {
-            var playerCart = Instantiate(playerCartPrefab, circuit.SpawnPoints[0].position,
-                                                            circuit.SpawnPoints[0].rotation);
-
-            Debug.Log(circuit.SpawnPoints[0].position);
-            Debug.Log(circuit.SpawnPoints[0].rotation);
-            playerCamera.Follow = playerCart.transform;
-            playerCamera.LookAt = playerCart.transform;
-
-            for (int i = 1; i < circuit.SpawnPoints.Length; ++i)
+            for (int i = 1; i < circuit.spawnPoints.Length; ++i)
             {
-                new AICartBuilder(aiCartPrefabs[Random.Range(0, aiCartPrefabs.Length)])
+                GameObject aiCart = new AIKartBuilder(aiKartPrefabs[Random.Range(0, aiKartPrefabs.Length)])
                     .withCircuit(circuit)
                     .withDriverData(aiDriverData)
-                    .withSpawnPoint(circuit.SpawnPoints[i])
+                    .withSpawnPoint(circuit.spawnPoints[i])
                     .build();
+
+                if (null != aiCart)
+                {
+                    aiCart.GetComponent<NetworkObject>().Spawn();
+                }
             }
         }
 
-        class AICartBuilder
+        class AIKartBuilder
         {
             GameObject prefab;
             AIDriverData data;
             Circuit circuit;
             Transform spawnPoint;
 
-            public AICartBuilder(GameObject prefab)
+            public AIKartBuilder(GameObject prefab)
             {
                 this.prefab = prefab;
             }
 
-            public AICartBuilder withDriverData(AIDriverData data)
+            public AIKartBuilder withDriverData(AIDriverData data)
             {
                 this.data = data;
                 return this;
             }
 
-            public AICartBuilder withCircuit(Circuit circuit)
+            public AIKartBuilder withCircuit(Circuit circuit)
             {
                 this.circuit = circuit;
                 return this;
             }
 
-            public AICartBuilder withSpawnPoint(Transform spawnPoint)
+            public AIKartBuilder withSpawnPoint(Transform spawnPoint)
             {
                 this.spawnPoint = spawnPoint;
                 return this;
@@ -67,7 +62,7 @@ namespace DoggoCart
 
             public GameObject build()
             {
-                var instance = Object.Instantiate(prefab, spawnPoint.position, spawnPoint.rotation);
+                var instance = Instantiate(prefab, spawnPoint.position, spawnPoint.rotation);
                 var aiInput = instance.GetOrAdd<AIInput>();
                 aiInput.AddCircuit(circuit);
                 aiInput.AddDriverData(data);

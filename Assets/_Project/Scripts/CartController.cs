@@ -91,14 +91,12 @@ namespace DoggoCart
         [SerializeField] InputReader playerInput;
         [SerializeField] Circuit circuit;
         [SerializeField] AIDriverData aiDriverData;
-        [SerializeField] CinemachineCamera playerCamera;
-        [SerializeField] AudioListener audioListener;
 
         IDrive input;
         Rigidbody rigidBody;
         ClientNetworkTransform clientNetworkTransform;
 
-        Vector3 cartVelocity;
+        public Vector3 cartVelocity { get; private set; }
         float brakeVelocity;
         float driftVelocity;
 
@@ -140,14 +138,10 @@ namespace DoggoCart
         [SerializeField] float reconciliationThreshold = 50f;
         [SerializeField] GameObject serverCapsule;
         [SerializeField] GameObject clientCapsule;
-        
+
         CountdownTimer reconcileCooldownTimer;
 
-        [Header("Netcode Debug")]
-        [SerializeField] TextMeshProUGUI NetworkStatusText;
-        [SerializeField] TextMeshProUGUI PlayerStatusText;
-        [SerializeField] TextMeshProUGUI ServerRPCDebugText;
-        [SerializeField] TextMeshProUGUI ClientRPCDebugText;
+        
 
         void Awake()
         {
@@ -189,26 +183,11 @@ namespace DoggoCart
             this.input = input;
         }
 
-        public override void OnNetworkSpawn()
-        {
-            if (!IsOwner)
-            {
-                audioListener.enabled = false;
-                playerCamera.Priority = 0;
-                return;
-            }
-
-            playerCamera.Priority = 100;
-            audioListener.enabled = true;
-        }
-
-        void Update()
+        protected virtual void Update()
         {
             networkTimer.Update(Time.deltaTime);
             reconcileCooldownTimer.Tick(Time.deltaTime);
             expCooldownTimer.Tick(Time.deltaTime);
-
-            PlayerStatusText.SetText($"Owner: {IsOwner} NetworkObjectID: {NetworkObjectId} Velocity: {cartVelocity.magnitude:F1}");
 
             Extrapolate();
         }
@@ -247,7 +226,7 @@ namespace DoggoCart
                 bufferIndex = inputPayload.tick % BUFFER_SIZE;
 
                 StatePayload statePayload = ProcessMovement(inputPayload);
-                serverCapsule.transform.position = statePayload.position.With(y: 5);
+                serverCapsule.transform.position = statePayload.position;
                 serverStateBuffer.Add(statePayload, bufferIndex);
             }
 
@@ -293,7 +272,7 @@ namespace DoggoCart
             SendToServerRpc(inputPayload);
 
             StatePayload statePayload = ProcessMovement(inputPayload);
-            clientCapsule.transform.position = statePayload.position.With(y: 5);
+            clientCapsule.transform.position = statePayload.position;
             clientStateBuffer.Add(statePayload, bufferIndex);
 
             // Á¶Á¤

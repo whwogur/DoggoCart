@@ -12,7 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 71089b843bce1614f9107eddda6be3f5, type: 3}
   m_Name: CircuitData
   m_EditorClassIdentifier: 
-  waypointObjects:
-  - {fileID: 2441340349621742844, guid: ed6ba020ac1eaea4782fb8d86ed97e4d, type: 3}
-  spawnpointObjects:
-  - {fileID: 4355384603723002155, guid: f40db119dc6d32b4fa2954d7d89b536e, type: 3}
+  waypoints:
+  - {fileID: 5421546868119978658, guid: 9711b8d1565ba6c43ba692fdfbdbeecb, type: 3}
+  - {fileID: 440105119821027611, guid: e97ea5ef11cbfb04089b8f7d01d23a0c, type: 3}
+  - {fileID: 1416791149496203916, guid: 0bc66990623efdb43aed8d2ae3b74225, type: 3}
+  - {fileID: 4921326531242172759, guid: bea7ca1a35eb54049b5078f718a8fcac, type: 3}
+  - {fileID: 1562727589176015451, guid: 076ca53e176e28146889acfe09b0cfc8, type: 3}
+  - {fileID: 8166422234516319769, guid: 732e4bd82b0edd245b1ca5b7e34b2b9d, type: 3}
+  spawnPoints:
+  - {fileID: 8842242589721774262, guid: c687a5b68bb3d044db64c1f0eec4b704, type: 3}
+  - {fileID: 4792278763373482735, guid: d029015f67ae65345b0710c30f1049fb, type: 3}
+  - {fileID: 4097008287239634335, guid: a0d19dc6ccc5aad47bce94c649d86e2c, type: 3}

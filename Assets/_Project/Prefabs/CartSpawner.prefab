@@ -46,8 +46,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   circuit: {fileID: 11400000, guid: cefff07360ed0b840acf462adf88385f, type: 2}
   aiDriverData: {fileID: 11400000, guid: dbfffae8653428f46bb301d96a5a8d77, type: 2}
-  aiKartPrefabs:
-  - {fileID: 5474264578636520319, guid: fba2775d0cacf2740b31f7fb001ab845, type: 3}
-  - {fileID: 2484818802607977841, guid: 2c928ab88ef61f74eb5a43e3609670ff, type: 3}
-  playerKartPrefab: {fileID: 121487365440230407, guid: b7c35033a4ec8754c96c96d769e5252d, type: 3}
-  playerCamera: {fileID: 0}
+  aiCartPrefabs:
+  - {fileID: 121487365440230407, guid: 49b5a0637a7367040a5bbd0d17f37e32, type: 3}
+  - {fileID: 121487365440230407, guid: 755ef7cea147ff94cae313dff06d653b, type: 3}
